@@ -1,0 +1,29 @@
+powershell -Command "$json = @'
+{
+  ""services"": {
+    ""frontend"": {
+      ""root"": ""frontend"",
+      ""framework"": ""vite""
+    },
+    ""backend"": {
+      ""root"": ""backend""
+    }
+  },
+  ""rewrites"": [
+    {
+      ""source"": ""/api(/.*)?"",
+      ""destination"": {
+        ""type"": ""service"",
+        ""service"": ""backend""
+      }
+    },
+    {
+      ""source"": ""/(.*)"",
+      ""destination"": {
+        ""type"": ""service"",
+        ""service"": ""frontend""
+      }
+    }
+  ]
+}
+'@; Set-Content -Path 'vercel.json' -Value $json -Encoding UTF8"
