@@ -1,0 +1,189 @@
+import serial
+import requests
+import re
+import time
+
+# ==============================
+# CONFIGURATION
+# ==============================
+
+ARDUINO_PORT = "COM3"
+BAUD_RATE = 9600
+
+API_URL = "http://127.0.0.1:8000/api/sensor-data"
+
+# ==============================
+# CONNECT TO ARDUINO
+# ==============================
+
+print("====================================")
+print(" AgriPulse Arduino Bridge")
+print("====================================")
+print(f"Arduino Port : {ARDUINO_PORT}")
+print(f"Baud Rate    : {BAUD_RATE}")
+print(f"API URL      : {API_URL}")
+print("------------------------------------")
+
+try:
+    arduino = serial.Serial(
+        ARDUINO_PORT,
+        BAUD_RATE,
+        timeout=1
+    )
+
+    # Give Arduino time to reset after serial connection
+    time.sleep(2)
+
+    print("Arduino connected successfully!")
+    print("Waiting for sensor data...")
+    print("------------------------------------")
+
+except Exception as e:
+    print("ERROR: Could not connect to Arduino.")
+    print(e)
+    input("Press ENTER to close...")
+    exit()
+
+
+# ==============================
+# SENSOR VALUES
+# ==============================
+
+soil_moisture = None
+temperature = None
+humidity = None
+
+
+# ==============================
+# SEND DATA TO AGRIPULSE
+# ==============================
+
+def send_to_agripulse():
+
+    payload = {
+        "soil_moisture": soil_moisture,
+        "temperature": temperature,
+        "humidity": humidity,
+        "ph": None,
+        "light": None,
+        "rainfall": None,
+        "source": "Arduino UNO"
+    }
+
+    try:
+
+        response = requests.post(
+            API_URL,
+            json=payload,
+            timeout=5
+        )
+
+        if response.status_code == 200:
+
+            result = response.json()
+
+            print("")
+            print(">>> DATA SENT TO AGRIPULSE")
+            print(f"Soil Moisture : {soil_moisture} %")
+            print(f"Temperature   : {temperature} C")
+            print(f"Humidity      : {humidity} %")
+            print(f"Record ID     : {result.get('record_id')}")
+            print("------------------------------------")
+
+        else:
+
+            print("")
+            print("ERROR FROM AGRIPULSE")
+            print("Status:", response.status_code)
+            print(response.text)
+            print("------------------------------------")
+
+    except requests.exceptions.RequestException as e:
+
+        print("")
+        print("ERROR: Could not connect to AgriPulse.")
+        print(e)
+        print("------------------------------------")
+
+
+# ==============================
+# READ ARDUINO SERIAL DATA
+# ==============================
+
+try:
+
+    while True:
+
+        line = arduino.readline().decode(
+            "utf-8",
+            errors="ignore"
+        ).strip()
+
+        if not line:
+            continue
+
+        print("Arduino:", line)
+
+        # --------------------------
+        # Soil Moisture
+        # Example:
+        # Soil Moisture: 35 %
+        # --------------------------
+
+        match = re.search(
+            r"Soil Moisture:\s*([\d.]+)",
+            line,
+            re.IGNORECASE
+        )
+
+        if match:
+            soil_moisture = float(match.group(1))
+
+        # --------------------------
+        # Temperature
+        # Example:
+        # Temperature: 30.30 C
+        # --------------------------
+
+        match = re.search(
+            r"Temperature:\s*([\d.]+)",
+            line,
+            re.IGNORECASE
+        )
+
+        if match:
+            temperature = float(match.group(1))
+
+        # --------------------------
+        # Humidity
+        # Example:
+        # Humidity: 80.20 %
+        # --------------------------
+
+        match = re.search(
+            r"Humidity:\s*([\d.]+)",
+            line,
+            re.IGNORECASE
+        )
+
+        if match:
+            humidity = float(match.group(1))
+
+            # Send only when all three
+            # important values are available
+            if (
+                soil_moisture is not None
+                and temperature is not None
+                and humidity is not None
+            ):
+                send_to_agripulse()
+
+except KeyboardInterrupt:
+
+    print("")
+    print("Bridge stopped by user.")
+
+finally:
+
+    arduino.close()
+    print("Arduino connection closed.")
